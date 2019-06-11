@@ -1,0 +1,223 @@
+---
+title: "HHernandez_DATA612_Project1"
+author: "humbertohp"
+date: "June 10, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System for Movies.
+
+This is a simple recommender system for movies. GroupLens Research has collected and made available rating data sets from the MovieLens web site (http://movielens.org). The data sets were collected over various periods of time. The selected dataset has ~100K movie ratings (1-5) from ~1000 users on ~1700 movies. Training and testing data sets are prepared and available already with an 80/20 split proportion
+
+##### Data collection, sampling and preparation
+
+```{r message=FALSE}
+
+# Loading datasets, Package Installation
+
+train_base <- read.table('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/ua_train.txt')
+test_base <- read.table('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/ua_test.txt')
+item_base <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/item.txt', sep = '|')
+user_base <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/user.txt', sep = '|')
+
+#install.packages("tidyverse")
+library(dplyr)
+library(tidyr)
+```
+
+```{r }
+# Complementing, Filtering & Sampling datasets
+
+#Train data set
+
+item_tmp <- item_base[,1:3]
+item <- sample_n(item_tmp, 100, replace = FALSE) 
+colnames(item) <- c("MovID", "MovTitle", "ReleaseDT")
+user_tmp <- user_base[,1:3]
+user <- sample_n(user_tmp, 100, replace = FALSE) 
+colnames(user) <- c("UserID", "Age", "Gender")
+train_tmp <- train_base
+colnames(train_tmp) <- c("UserID", "ItemID", "Rating", "TS")
+train_tmp <- inner_join(train_tmp, user, by = "UserID")
+train_tmp <- inner_join(train_tmp, item, by = c("ItemID" = "MovID"))
+train_tmp <- train_tmp[,c(1:3)]
+
+train <- sample_frac(train_tmp, 0.1, replace = FALSE) 
+train
+
+#Test data set
+
+test_tmp <- test_base
+colnames(test_tmp) <- c("UserID", "ItemID", "Rating", "TS")
+
+user_train <- inner_join(train, user, by = "UserID")
+user_train <- data.frame(user_train[,1])
+colnames(user_train) <- c("UserID")
+
+item_train <- inner_join(train, item, by = c("ItemID" = "MovID"))
+item_train <- data.frame(item_train[,2])
+colnames(item_train) <- c("ItemID")
+
+test_tmp <- semi_join(test_tmp, user_train, by = "UserID")
+test_tmp <- semi_join(test_tmp, item_train, by = "ItemID")
+test_tmp <- test_tmp[,c(1:3)]
+
+test <- test_tmp # no sampling due to limited records found in test set (sample_frac(test_tmp, 0.5, replace = FALSE))
+test
+```
+
+##### Calculate Raw Average and corresponding RMSE
+
+```{r }
+
+#User-Item Matrix (Train)
+train_matrix <- spread(train[,1:3], ItemID, Rating)
+train_matrix <- train_matrix[,-1] #discard UserID
+
+#User-Item Matrix (Test)
+test_matrix <- spread(test[,1:3], ItemID, Rating)
+
+# Raw Average
+mov_raw_avg <- round(mean(as.matrix(train_matrix), na.rm = TRUE),1)
+mov_raw_avg
+
+# validating raw average
+#sum(as.matrix(train_matrix), na.rm = TRUE) / sum(!is.na(train_matrix))
+
+# RMSE - Test
+test_ratings <- test[,3]
+rsq_diff <- c()
+for (i in test_ratings){
+  rsq_diff[length(rsq_diff)+1] <- (i-mov_raw_avg)^2
+}
+
+rmse_raw_test <- sqrt(mean(rsq_diff))
+rmse_raw_test
+
+# RMSE - Train
+train_ratings <- train[,3]
+rsq_diff <- c()
+for (i in train_ratings){
+  rsq_diff[length(rsq_diff)+1] <- (i-mov_raw_avg)^2
+}
+
+rmse_raw_train <- sqrt(mean(rsq_diff))
+rmse_raw_train
+
+```
+
+
+##### Calculate Baseline Predictor and corresponding RMSE
+
+```{r }
+
+# TRAIN
+
+# Calculate User and Movie Biases
+train_matrix <- spread(train[,1:3], ItemID, Rating)
+rownames(train_matrix) <- train_matrix[,1] #make UserIDs as rownames
+train_matrix <- train_matrix[,-1] #discard UserID
+user_mean <- round(rowMeans(as.matrix(train_matrix), na.rm = TRUE),1)
+user_bias <- user_mean-mov_raw_avg
+movie_mean <- round(colMeans(as.matrix(train_matrix), na.rm = TRUE),1)
+movie_bias <- movie_mean-mov_raw_avg
+
+# Calculating Baseline Predictor Matrix
+
+k <- length(movie_bias)
+n <- length(user_bias)
+bsln_pred <- matrix(, nrow = n, ncol = k)
+for(j in 1:k){
+   for(i in 1:n){
+        bsln_pred[i,j] = mov_raw_avg + user_bias[i] + movie_bias[j]
+        if (bsln_pred[i,j] < 1){
+          bsln_pred[i,j] <- 1
+        }
+        if (bsln_pred[i,j] > 5){
+          bsln_pred[i,j] <- 5
+        }
+        
+   }
+}
+
+colnames(bsln_pred) <- names(movie_bias)
+rownames(bsln_pred) <- names(user_bias)
+
+# RMSE - Train
+
+rsq_diff <- (train_matrix - bsln_pred)^2
+
+rmse_bsln_pred_train <- sqrt(mean(as.matrix(rsq_diff), na.rm = TRUE))
+rmse_bsln_pred_train
+
+## TEST
+
+test_matrix <- spread(test[,1:3], ItemID, Rating)
+rownames(test_matrix) <- test_matrix[,1] #make UserIDs as rownames
+test_matrix <- test_matrix[,-1] #discard UserID
+# Subsetting baseline predictor matrix for only the Users & Items present in the Test Matrix
+user_bias_test <- user_bias[as.character(sort(unique(test$UserID)))]
+movie_bias_test <- movie_bias[as.character(sort(unique(test$ItemID)))]
+
+# Calculating Baseline Predictor Matrix
+
+k <- length(movie_bias_test)
+n <- length(user_bias_test)
+bsln_pred_test <- matrix(, nrow = n, ncol = k)
+for(j in 1:k){
+   for(i in 1:n){
+        bsln_pred_test[i,j] = mov_raw_avg + user_bias_test[i] + movie_bias_test[j]
+        if (bsln_pred_test[i,j] < 1){
+          bsln_pred[i,j] <- 1
+        }
+        if (bsln_pred_test[i,j] > 5){
+          bsln_pred_test[i,j] <- 5
+        }
+        
+   }
+}
+
+colnames(bsln_pred_test) <- names(movie_bias_test)
+rownames(bsln_pred_test) <- names(user_bias_test)
+
+# RMSE - Test
+
+rsq_diff_test <- (test_matrix - bsln_pred_test)^2
+
+rmse_bsln_pred_test <- sqrt(mean(as.matrix(rsq_diff_test), na.rm = TRUE))
+rmse_bsln_pred_test
+
+```
+
+##### Conclusion
+
+###### Comparing RMSEs for the 2 solution approaches
+
+```{r }
+# Raw Averages for Train and Test sets:
+
+rmse_raw_train
+rmse_raw_test
+
+# Baseline Predictors for Train and Test sets:
+
+rmse_bsln_pred_train
+rmse_bsln_pred_test
+
+# Improvement Percentages:
+
+train_improv <- (1- (rmse_bsln_pred_train/rmse_raw_train))*100
+train_improv
+test_improv <- (1- (rmse_bsln_pred_test/rmse_raw_test))*100
+test_improv
+````
+
+On average, a baseline predictor approach provides a considerable improvement compared to a raw average approach, it represents a more informed process to assign/predict a specific rating for a User/Item pair.
+The above statement was proven completely right for the Train set (~50%+ improvement); for the Test set however, there was a negative improvement primarily due to the sparcity of the test set (and the randomness of my sampling on top to make it simpler to validate by hand) which did not allow for more precise biases calculations (User & Item). I prefered to use a more realistic data set (Movilens) rather to creating a synthethic one precisely because I wanted to get a feel of how the processing and actual RMSE calculations were going to be with real data.
