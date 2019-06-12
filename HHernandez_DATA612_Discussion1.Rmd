@@ -1,0 +1,25 @@
+---
+title: "HHernandez_DATA612_Discussion1"
+author: "humbertohp"
+date: "June 11, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### The Browsemaps: Collaborative Filtering at LinkedIn
+
+At LinkedIn, the largest online professional social network, item-to-item collaborative ???ltering is used for people, job, company, group, and other entity recommendations and is a principal component of engagement. That is, for each entity type on the site, there exists a navigational aid that allows members to browse and discover other content
+
+Initially designed to showcase co-occurrence in views of other member's pro???les (a pro???le browsemap or "People Who Viewed This Pro???le Also Viewed"), it grew the browsemap computation into a generic piece of horizontal relevance infrastructure that can support any entity with a simple con???guration change. This infrastructure, the Browsemap platform, enables easy addition of other navigational content recommendations. Moreover, the availability of a scalable collaborative filtering primitive also permits easy inclusion of ICF-based features into other models and products. For example, "Companies You May Want to Follow" recommender system, which allows members to follow a company to receive its status updates, uses the Browsemap platform to compute collaborative filtering of company follows as part of its recommendation set. In essence, browsemaps form a latent graph of co-occurrences of across entity types on LinkedIn. 
+
+Browsemap is a managed platform with mostly shared components and some vertical-specific logic. LinkedIn's frontend framework emits activity events on every page view. A parameterized pipeline for each entity type uses these events to construct a co-occurrence matrix with some entity-specific tuning. Browsemaps are computed offline incrementally in batches on Hadoop, loaded into an online key-value store, and queried through an entity agnostic online API. As Browsemap is a horizontal platform, it provides high leverage to each application developer through reuse of common components, centralized monitoring, and ease of scaling to the billions of weekly page views on LinkedIn. An application developer simply specifies the type of collaborative filtering that is needed, the location of the input data, and changes any parameters if needed; the resulting browsemap is then available in Hadoop and via an online API in a straightforward manner.
+
+Full paper: http://ls13-www.cs.tu-dortmund.de/homepage/rsweb2014/papers/rsweb2014_submission_3.pdf
+
+I believe the Linkedin uber recommender system is very good, the different recommender subsytems and technologies have enabled the creation of multiple data-driven products around the professional network/graph worldwide that have become de-facto standards & tools to engage professionals for hiring, lead generation and sales opportunity management.
