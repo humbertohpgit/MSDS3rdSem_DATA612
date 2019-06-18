@@ -1,0 +1,223 @@
+---
+title: "HHernandez_DATA612_Project2"
+author: "humbertohp"
+date: "June 17, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System for Movies - Content-Based and Collaborative Filtering 
+
+GroupLens Research has collected and made available rating data sets from the MovieLens web site (http://movielens.org). The data sets were collected over various periods of time. The selected dataset has ~100K movie ratings (1-5) from ~600 users on ~9000 movies. 
+
+Users were selected at random for inclusion. All selected users had rated at least 20 movies. No demographic information is included. Each user is represented by an id, and no other information is provided.
+
+The data are contained in the files `links.csv`, `movies.csv`, `ratings.csv` and `tags.csv`.
+
+##### Data collection
+
+```{r message=FALSE}
+
+# Loading datasets, Package Installation
+
+movies <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/movies.csv')
+ratings <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/ratings.csv')
+
+
+#install.packages("tidyverse")
+library(dplyr)
+library(tidyr)
+```
+
+##### Content-based Filtering
+
+```{r message=FALSE, warning=FALSE}
+
+# Movie Feature Matrix
+
+# Build a matrix with genres in the columns and 0's or 1's indicating the presence of a genre in each movie
+
+# Genres split
+
+genres <- as.data.frame(movies$genres, stringsAsFactors=FALSE)
+library(data.table)
+genres_tmp <- as.data.frame(tstrsplit(genres[,1], '[|]', type.convert=TRUE), stringsAsFactors=FALSE)
+colnames(genres_tmp) <- c(1:10)
+
+genre_list <- c("Action", "Adventure", "Animation", "Children", "Comedy", "Crime","Documentary", "Drama", "Fantasy","Film-Noir", "Horror", "Musical", "Mystery","Romance","Sci-Fi", "Thriller", "War", "Western") # genres list from the dataset readme
+ 
+genre_mat <- matrix(0,nrow(genres_tmp),length(genre_list)) #empty matrix
+genre_mat[1,] <- genre_list #set first row to genre list
+colnames(genre_mat) <- genre_list #set column names to genre list
+ 
+#iterate through matrix to assign 0's or 1's accordingly
+for (i in 1:nrow(genres_tmp)) {
+ for (c in 1:ncol(genres_tmp)) {
+  genmat_col = which(genre_mat[1,] == genres_tmp[i,c])
+  if (i != nrow(genres_tmp)){
+  genre_mat[i+1,genmat_col] <- 1
+  }
+ }
+}
+ 
+genre_mat <- as.data.frame(genre_mat[-1,], stringsAsFactors=FALSE) #remove first row, which was the genre list
+for (c in 1:ncol(genre_mat)) {
+  genre_mat[,c] <- as.numeric(genre_mat[,c])
+}
+
+head(genre_mat,5)
+
+# User Profile Matrix
+
+# Build a matrix with userd in the columns, movies as rows and the ratings set to 0 when there are NAs
+
+#Simplify ratings values to a binary scale
+
+bin_ratings <- ratings
+for (i in 1:nrow(bin_ratings)){
+ if (bin_ratings[i,3] > 3){
+   bin_ratings[i,3] <- 1
+ }
+ else{
+   bin_ratings[i,3] <- -1
+ }
+}
+
+user_mat <- spread(bin_ratings[,1:3], userId, rating)
+
+for (i in 1:ncol(user_mat)){
+  user_mat[which(is.na(user_mat[,i]) == TRUE),i] <- 0
+}
+user_mat = user_mat[,-1]
+
+head(user_mat,1)
+
+# Matrices Dot Product - User preference towards movie genres
+
+dim(genre_mat)
+dim(user_mat)
+
+#Remove movies that have no rating in the dataset
+
+movieIds <- unique(movies$movieId) #9741
+ratingmovieIds <- unique(ratings$movieId) #9724
+
+genre_mat_final <- genre_mat[-which((movieIds %in% ratingmovieIds) == FALSE),]
+rownames(genre_mat_final) <- NULL
+
+genre_mat_final <- as.data.frame(genre_mat_final, stringsAsFactors=FALSE)
+for (c in 1:ncol(genre_mat_final)) {
+  genre_mat_final[,c] <- as.integer(genre_mat_final[,c])
+}
+
+user_mat_final <- user_mat[-9724,]
+
+dim(genre_mat_final)
+dim(user_mat_final)
+
+dot_prod <- matrix(0,18,610)
+for (c in 1:ncol(user_mat_final)){
+  for (i in 1:ncol(genre_mat_final)){
+    dot_prod[i,c] <- sum((genre_mat_final[,i]) * (user_mat_final[,c]))
+    ## genre_mat_final[,i] %*% user_mat_final[,c]
+  }
+}
+
+dot_prod[,1]
+
+#Simplify to a Binary scale
+
+for (c in 1:ncol(dot_prod)){
+  for(i in 1:nrow(dot_prod)){
+    if (dot_prod [i,c] > 0){
+      dot_prod [i,c] <- 1
+    }
+    else {
+      dot_prod [i,c] <- 0
+    }
+  }
+}
+
+# Similarity Calculation between user profiles and movie genres
+
+# Calculation for 3 users (optimizing processing time)
+
+recomm_movies_5users <- list()
+
+for (i in 1:5){
+  result_user <- dot_prod[,i] # Specific user's profile
+  sim_mat <- rbind.data.frame(result_user, genre_mat_final)
+  sim_mat <- data.frame(lapply(sim_mat,function(x){as.integer(x)}))
+ 
+#Calculate Jaccard distance between user profile and all movies
+
+  library(proxy)
+  sim_results <- dist(sim_mat, method = "Jaccard")
+  sim_results <- as.data.frame(as.matrix(sim_results[1:9723]))
+  rows <- which(sim_results == min(sim_results))
+
+  #Top Recommended movies for specific (5) users
+  recomm_movies_5users[[i]] <- list(movies[rows,2])
+}
+
+# Top Recommended for Users (1-5)
+recomm_movies_5users
+```
+
+##### User-Based Collaborative Filtering Approach
+
+```{r message=FALSE, warning=FALSE}
+
+# Build a user matrix with movies as columns
+
+rating_mat <- spread(ratings[,1:3], movieId, rating)
+rating_mat <- as.matrix(rating_mat[,-1]) #remove userIds
+
+library(recommenderlab)
+
+#Convert into a recommenderlab sparse matrix
+rating_mat <- as(rating_mat, "realRatingMatrix") 
+ 
+#Normalize data
+rating_mat_norm <- normalize(rating_mat)
+ 
+#Create Recommender Model. "UBCF" (User-Based Collaborative Filtering)
+
+recommender_model <- Recommender(rating_mat_norm, method = "UBCF", param=list(method="Cosine",nn=30))
+
+#Obtain top 10 recommendations for users (1-5)
+recom <- predict(recommender_model, rating_mat[1:5], n=10) 
+recom_list <- as(recom, "list") #convert recommenderlab object to readable list
+ 
+recom_result <- list()
+
+for (i in c(1:5)){
+ recom_result[[i]] <- movies[as.integer(recom_list[[i]]),2]
+}
+
+# Top 10 recommendations for users (1-5)
+recom_result
+
+```
+
+##### Conclusion: Collaborative Filtering vs Content Based
+
+Collaborative Filtering: correlating personal preferences
+
+- If User1 loves A and B, and User2 loves A, B, and C, then User1 is more likely to love C 
+- Discover patterns in observed preference behavior across community of users
+- Predict new preferences based on those patterns 
+- Does not rely on item or user attributes/features
+
+Content Based Filtering: understanding user / item profiles
+
+- User1 is in zip code A and age group N and bought item X; User2 in same area and age group is likely to like X
+- Trained on user features and item features to predict preferences based on those patterns
+- Can handle cold starts (new users / items with no interaction data)
+
