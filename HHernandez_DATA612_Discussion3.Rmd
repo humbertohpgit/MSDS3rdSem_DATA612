@@ -1,0 +1,41 @@
+---
+title: "HHernandez_DATA612_Discussion3"
+author: "humbertohp"
+date: "June 21, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### May we recommend.some Ethics?
+
+Recommender systems have proliferated because there are benefits to be shared on both sides of the coin. Data-driven recommendations mean customers have to spend less time digging for the perfect product themselves. The algorithm does the heavy lifting - once they set off on the trail of whatever they're seeking, they are guided to things they may have otherwise only found after hours of searching (or not at all). Reaping even more rewards, however, are the companies using the hook of an initial search to draw users further and further into their platform, increasing their revenue potential (the whole point!) with every click.
+
+##### Not that innocent
+
+In the last year, however, some of these recommender giants (YouTube, Facebook, Twitter) have gotten attention for the ways in which their algorithms have been unwitting enablers of political radicalization and the proliferation of conspiratorial content. It's not surprising, in truth, that machine learning quickly discovered that humans are drawn to drama and tempted by content more extreme than what they originally set out to find. And if drama means clicks and clicks mean revenue, that algorithm has accomplished its task! Fortunately, research and methods are underway to redirect and limit radicalizing behavior.
+
+However, dangers need not be as extreme as ISIS sympathizing to merit notice. Take e-commerce. With over 70% of the US population projected to make an online purchase this year, behind-the-scenes algorithms could be influencing the purchasing habits of a healthy majority of the population. The sheer volume of people impacted by recommender systems, then, is cause for a closer look.
+
+It doesn't take long to think up recommendation scenarios that could raise an eyebrow. While humans fold ethical considerations into their recommendations, algorithms programmed to drive revenue do not. For example, imagine an online grocery service, like [Instacart] Junk food -> more junk food!
+
+##### Can systems be held accountable?
+
+While this may be great for retailers' bottom line, it's clearly not for our country's growing waistlines. Some might argue that nothing has fundamentally changed from the advertising and marketing schemes of yore. Aren't companies merely responding to the same old pushes and pulls of supply and demand - supplying what they know users would ask for if they had the knowledge/chance? Legally, of course, they're right - nothing new is required of companies to suggest and sell ice cream, just because they now know intimately that a customer has a weakness for it.
+
+Ethics, however, points the other way. Increased access to millions of users' preferences and habits and opportunity to influence behavior aren't negligible. Between the power of suggestion, knowledge of users' tastes, and lack of barriers between hitting "purchase" and having the treat delivered - what role should ethically-responsible retailers play in helping their users avoid decisions that could negatively impact their well-being?
+
+Unfortunately, there's unlikely to be a one-size-fits-all approach across sectors and systems. However, it would be advantageous to see companies start integrating approaches that mitigate potential harm to users. While following the principles of respect for persons, beneficence, and justice laid out in the Belmont Report is always a good place to start, some specific approaches could include:
+
+Providing users more transparency and access to the algorithm (e.g. being able to turn off/on recommendations for certain items) 
+Maintaining manual oversight of sensitive topics where there is potential for harm 
+Allowing users to flag and provide feedback when they encounter a detrimental recommendation 
+
+As users become more savvy and aware of the ways in which recommender systems influence their interactions online, it is likely that the demand for ethical platforms will only rise. Companies would be wise to take measures to get out ahead of these ethical concerns - for both their and their users' sakes.
+
+http://blogs.ischool.berkeley.edu/w231/2018/10/17/may-we-recommend-some-ethics/
