@@ -1,0 +1,162 @@
+---
+title: "HHernandez_DATA612_Project3"
+author: "humbertohp"
+date: "June 24, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System for Movies - Matrix Factorization Methods
+
+GroupLens Research has collected and made available rating data sets from the MovieLens web site (http://movielens.org). The data sets were collected over various periods of time. The selected dataset has ~100K movie ratings (1-5) from ~600 users on ~9000 movies. 
+
+Users were selected at random for inclusion. All selected users had rated at least 20 movies. No demographic information is included. Each user is represented by an id, and no other information is provided.
+
+The data are contained in the files `links.csv`, `movies.csv`, `ratings.csv` and `tags.csv`.
+
+##### Data collection
+
+```{r message=FALSE}
+
+# Loading datasets, Package Installation
+
+movies <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/movies.csv')
+ratings <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/ratings.csv')
+
+
+#install.packages("tidyverse")
+library(dplyr)
+library(tidyr)
+```
+
+
+##### Recommender based on SVD approximation with column-mean imputation
+
+```{r message=FALSE, warning=FALSE}
+
+# Data Exploration
+
+summary(ratings)
+head(ratings)
+summary(movies)
+head(movies)
+
+# Build a user matrix with movies as columns
+
+rating_mat <- spread(ratings[,1:3], movieId, rating)
+rating_mat <- as.matrix(rating_mat[,-1]) #remove userIds
+
+library(recommenderlab)
+
+#Convert into a recommenderlab sparse matrix
+rating_mat <- as(rating_mat, "realRatingMatrix") 
+
+#Exploring parameters of recommendation models
+recommender_models <- recommenderRegistry$get_entries(dataType = "realRatingMatrix")
+names(recommender_models)
+lapply(recommender_models, "[[", "description")
+
+#SVD Parameters
+recommender_models$SVD_realRatingMatrix$parameters
+
+#Determine similarity between users (first 4)
+similarity_users <- similarity(rating_mat[1:4, ], method = "cosine", which = "users")
+as.matrix(similarity_users)
+image(as.matrix(similarity_users), main = "User similarity")
+
+#Determine similarity between items (movies) (first 4)
+similarity_items <- similarity(rating_mat[, 1:4], method = "cosine", which ="items")
+as.matrix(similarity_items)
+image(as.matrix(similarity_items), main = "Movies similarity")
+
+#Explore ratings distribution
+vector_ratings <- as.vector(rating_mat@data)
+table(vector_ratings)
+
+#Explore movie performance
+views_per_movie <- colCounts(rating_mat) # count views for each movie
+table_views <- data.frame(movie = names(views_per_movie),views = views_per_movie)
+table_views <- table_views[order(table_views$views, decreasing = TRUE), ] # sort by number of views
+table_views$title <- NA
+
+for (i in 1:nrow(table_views)){
+  table_views[i,3] <- as.character(subset(movies, movies$movieId == table_views[i,1])$title)
+}
+head(table_views)
+
+#Consider only movies with total of views higher than 50 views
+average_ratings <- colMeans(rating_mat)
+average_ratings_relevant <- average_ratings[views_per_movie > 50] 
+# Out of 9700+ movies, only 436 have more thab 50 views
+length(average_ratings_relevant)
+
+#Focus on a more relevant set of ratings with the following constraints: Minimum of 50 users per rates movie and 50 views per movie.
+
+ratings_relevant <- rating_mat[rowCounts(rating_mat) > 50,            colCounts(rating_mat) > 50]
+
+ratings_relevant
+
+vector_ratings_relevant <- as.vector(ratings_relevant@data)
+table(vector_ratings_relevant)
+
+
+#Normalize data
+
+#Defining Train and Test data sets
+
+train_filter <- sample(x = c(TRUE, FALSE), size = nrow(ratings_relevant),replace = TRUE, prob = c(0.8, 0.2))
+
+train_ratings <- as(ratings_relevant[train_filter, ], "realRatingMatrix") 
+test_ratings <- as(ratings_relevant[!train_filter, ], "realRatingMatrix")
+
+#Normalize data
+train_ratings <- normalize(train_ratings)
+test_ratings <- normalize(test_ratings)
+
+#Create Recommender Model. Based on SVD approximation with column-mean imputation
+
+recommender_model <- Recommender(train_ratings, method = "SVD", param=list(k=10,maxiter=100,normalize="center"))
+
+
+# Top 10 recommendations for users (1-10)
+recom <- predict(recommender_model, newdata=test_ratings, n=10, type="topNList") 
+recom_list <- as(recom, "list")
+
+recom_result <- list()
+for (i in c(1:10)){
+ recom_result[[i]] <- movies[as.integer(recom_list[[i]]),2]
+}
+library(knitr)
+recom_result_df <- as.data.frame(recom_result)
+colnames(recom_result_df) <- seq(1,10,1)
+kable(recom_result_df)
+
+#Ratings assigned to the movies
+recomr <- predict(recommender_model, newdata=test_ratings,  type="ratingMatrix") 
+recomr_mat <- as(recomr, "matrix")
+recomr_mat[1:5,1:5] #First 5 users and first 5 movies
+
+#Evaluating Model with Cross-validation
+
+eval_sch <- evaluationScheme(ratings_relevant, method="cross-validation", k=4, given=10, goodRating=3)
+recommender_model <- Recommender(getData(eval_sch,"train"), method = "SVD", param=list(k=10,maxiter=100,normalize="center"))
+recom <- predict(recommender_model, newdata=getData(eval_sch,"known"), n=10, type="topNList") 
+
+#Performance index of the whole model
+eval_accuracy <- calcPredictionAccuracy(x = recom, data = getData(eval_sch, "unknown"), given=10, goodRating=3, byUser = FALSE)
+head(eval_accuracy)
+
+#Evaluate recommender model depending on the number of items (movies) recommended for every user (multiples of 5 up to 20)
+results <- evaluate(x = eval_sch,method = "SVD",n = seq(0,20,5))
+head(getConfusionMatrix(results)[[1]])
+
+
+
+```
+
