@@ -1,0 +1,187 @@
+---
+title: "HHernandez_DATA612_Project4"
+author: "humbertohp"
+date: "June 28, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System Evaluation - Accuracy and Beyond
+
+Recommendation system for music artists based on user preferences according to the songs listening frequencies (called weights) used as ratings
+
+This dataset contains social networking, tagging, and music artist listening information from a set of 2K users from Last.fm online music system.
+The dataset is released in the framework of the 2nd International Workshop on Information Heterogeneity and Fusion in Recommender Systems (HetRec 2011)  http://ir.ii.uam.es/hetrec2011 
+http://www.last.fm 
+
+Data Statistics:
+1892 users
+17632 artists
+92834 user-listened artist relations, i.e. tuples [user, artist, listeningCount]
+
+##### Data collection, exploration and preparation
+
+```{r message=FALSE, warning=FALSE}
+
+# Loading datasets, Package Installation
+
+artists <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/artists.dat', header = TRUE, sep="\t")
+artists <- artists[,1:2]
+user_artists <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/user_artists.dat', header = TRUE, sep="\t")
+
+#install.packages("tidyverse")
+#install.packages("recommenderlab")
+#install.packages("recosystem")
+library(dplyr)
+library(tidyr)
+library(recommenderlab)
+library(recosystem)
+
+#Exploring data sets Transforming weights to ratings
+head(artists)
+head(user_artists)
+
+# Reduce data set to the most relevant users (with minimum listening frequency = 10) and the top artists based on total listening frequency
+
+user_artists_mat <- user_artists %>% spread(key=artistID,value=weight)
+
+artist_freq <- colSums(user_artists_mat[,-1],na.rm = TRUE)
+
+top_user_artist <- user_artists_mat[,order(artist_freq,decreasing = TRUE)[1:100]]
+list_freq <- apply(top_user_artist,1,function(x) return(sum(!is.na(x))))
+top_user_artist <-  top_user_artist[list_freq > 10,]
+dim(top_user_artist)
+
+# Transforming weights to ratings
+
+quantile(user_artists$weight, na.rm=TRUE) #determine ratings limits
+quantile(user_artists$weight, probs=0.90,na.rm=TRUE)
+
+user_artist_trans <- top_user_artist
+user_artist_trans[user_artist_trans$weight < 107] <- 1
+user_artist_trans[user_artist_trans >= 107 & user_artist_trans < 260] <- 2
+user_artist_trans[user_artist_trans >= 260 & user_artist_trans < 614] <- 3
+user_artist_trans[user_artist_trans >= 614 & user_artist_trans < 1387] <- 4
+user_artist_trans[user_artist_trans >= 1387] <- 5
+
+head(user_artist_trans,3)
+
+# Create sparse matrix and the corresponding Train and Test data sets
+
+user_artist_trans_mat <- as(as.matrix(user_artist_trans),"realRatingMatrix")
+user_artist_trans_mat
+
+set.seed(100)
+eval_sch <- evaluationScheme(data = user_artist_trans_mat, method = "split", train = .8, given = 3, goodRating = 3)
+
+```
+
+##### recommenderlab - Different Recommender Methods
+
+```{r message=FALSE, warning=FALSE}
+
+#Exploring parameters of recommendation methods in recommenderlab
+
+recommender_models <- recommenderRegistry$get_entries(dataType = "realRatingMatrix")
+names(recommender_models)
+lapply(recommender_models, "[[", "description")
+
+# Create recommender model - User-based Collaborative Filtering (UCBF)
+
+recommender_model_ubcf <- Recommender(data=getData(eval_sch,"train"),method="UBCF")
+
+# Recommendation for the first 5 users
+
+recom_ubcf <- predict(recommender_model_ubcf, getData(eval_sch,"known")[1:5], n=5, type = "topNList")
+recom_ubcf_list <- as(recom_ubcf, "list") #convert recommenderlab object to readable list
+recom_ubcf_list 
+
+# Get artist names
+
+recom_ubcf_result <- list()
+for (i in c(1:5)){
+ recom_ubcf_result[[i]] <- artists[artists$id %in% as.vector(recom_ubcf_list[[i]]),2]
+}
+
+# Top 5 recommendations for the first 5 users
+recom_ubcf_result
+
+# Evaluation
+
+# Prediction of ratings for all users
+
+recom_ubcf <- predict(recommender_model_ubcf, getData(eval_sch,"known"), type = "ratings")
+
+accuracy_ubcf <- calcPredictionAccuracy(x = recom_ubcf, data = getData(eval_sch, "unknown"), given=3, goodRating=3)
+
+accuracy_ubcf
+
+# Create recommender model - Alternating least squares (ALS)
+
+recommender_model_als <- Recommender(data=getData(eval_sch,"train"),method="ALS")
+
+# Recommendation for the first 5 users
+
+recom_als <- predict(recommender_model_als, getData(eval_sch,"known")[1:5], n=5, type = "topNList")
+recom_als_list <- as(recom_als, "list") #convert recommenderlab object to readable list
+recom_als_list 
+
+# Get artist names
+
+recom_als_result <- list()
+for (i in c(1:5)){
+ recom_als_result[[i]] <- artists[artists$id %in% as.vector(recom_als_list[[i]]),2]
+}
+
+# Top 5 recommendations for the first 5 users
+recom_als_result
+
+# Evaluation
+
+# Prediction of ratings for all users
+
+recom_als <- predict(recommender_model_als, getData(eval_sch,"known"), type = "ratings")
+
+accuracy_als <- calcPredictionAccuracy(x = recom_als, data = getData(eval_sch, "unknown"), given=3, goodRating=3)
+
+accuracy_als
+
+```
+
+##### recommenderlab - Recommender Methods Comparison
+
+```{r message=FALSE, warning=FALSE}
+
+comp_methods <- rbind(accuracy_ubcf, accuracy_als)
+rownames(comp_methods) <- c("UBCF", "ALS")
+library(knitr)
+kable(comp_methods)
+
+# ROC & Precision & Recall
+
+rec_methods <- list(
+  "UBCF" = list(name = "UBCF", param = NULL),
+  "ALS" = list(name = "ALS", param = NULL))
+eval_results <- evaluate(x = eval_sch, method = rec_methods, n = c(1, 5, 10, 15, 20,25,30))
+
+plot(eval_results, 
+     annotate = TRUE, legend = "topleft", main = "ROC Curve")
+
+plot(eval_results, "prec/rec", 
+     annotate = TRUE, legend = "topright", main = "Precision-Recall")
+
+```
+
+##### Observations
+
+In terms of model method accuracy, Alternate Least Square (ALS) provides better RMSE and MSE than the UBCF.
+Interestingly in the ROC curve, UBCF appears to perform better that ALS, meaning that in general the classification power of UBCF is better even though that in accuracy terms, ALS, shows less deviation from the actual rating values when it classifies correctly
+
+
+
