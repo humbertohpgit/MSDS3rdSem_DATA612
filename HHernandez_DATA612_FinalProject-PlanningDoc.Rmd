@@ -1,0 +1,26 @@
+---
+title: "HHernandez_DATA612_FinalProject-PlanningDoc"
+author: "humbertohp"
+date: "July 5, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System for Music
+
+Last.fm dataset is the official song tag and song similarity dataset of the Million Song Dataset.
+
+Last.fm provides a dataset for music recommendations. For each user in the dataset it contains a list of their top most listened to artists including the number of times those artists were played. 
+
+It also includes user applied tags which can be used to build a content vector.
+
+Last.fm dataset provides +940,000 matched tracks of the Million Song Dataset.
+
+I am planning to build a base Recommender System using the number of times certain artists were played as the rating proxy and as a new component, I will try to leverage the user tags to enrich the recommendations from the system by surfacing and matching music gender/category as latent features.
+
