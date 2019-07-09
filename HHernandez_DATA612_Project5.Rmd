@@ -1,0 +1,154 @@
+---
+title: "HHernandez_DATA612_Project5"
+author: "humbertohp"
+date: "July 8, 2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+#### Recommender System for Movies - Implementation on Spark
+
+GroupLens Research has collected and made available rating data sets from the MovieLens web site (http://movielens.org). The data sets were collected over various periods of time. The selected dataset has ~100K movie ratings (1-5) from ~600 users on ~9000 movies. 
+
+Users were selected at random for inclusion. All selected users had rated at least 20 movies. No demographic information is included. Each user is represented by an id, and no other information is provided.
+
+The data are contained in the files `links.csv`, `movies.csv`, `ratings.csv` and `tags.csv`.
+
+#### Loading datasets, Package Installation
+
+```{r message=FALSE, warning=FALSE}
+
+movies <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/movies.csv')
+ratings <- read.csv('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/ratings.csv')
+
+#install.packages("tidyverse")
+library(dplyr)
+library(tidyr)
+
+#Installing Sparklyr
+#remove.packages("sparklyr")
+install.packages("sparklyr")
+devtools::install_github("rstudio/sparklyr")
+library(sparklyr)
+spark_install()
+
+install.packages("tictoc")
+library(tictoc)
+```
+
+
+##### Recommender System based on Alternating Least Squares (ALS) -  recommenderlab Implementation
+
+```{r message=FALSE, warning=FALSE}
+
+tic()
+
+# Build a user matrix with movies as columns
+
+rating_mat <- spread(ratings[,1:3], movieId, rating)
+rating_mat <- as.matrix(rating_mat[,-1]) #remove userIds
+
+library(recommenderlab)
+
+#Convert into a recommenderlab sparse matrix
+rating_mat <- as(rating_mat, "realRatingMatrix") 
+
+#Focus on a more relevant set of ratings with the following constraints: Minimum of 5 users per rated movie and 5 views per movie.
+
+ratings_relevant <- rating_mat[rowCounts(rating_mat) > 5,            colCounts(rating_mat) > 5]
+
+ratings_relevant
+
+# Creating Recommender Model (ALS) and Evaluating Model using Cross-validation
+
+eval_sch <- evaluationScheme(rating_mat, method="cross-validation", k=10, given=3, goodRating=3)
+
+recommender_model <- Recommender(getData(eval_sch,"train"), method = "ALS")
+
+recom <- predict(recommender_model, newdata=getData(eval_sch,"known"), n=10, type="ratings") 
+
+# Model Performance
+eval_accuracy <- calcPredictionAccuracy(x = recom, data = getData(eval_sch, "unknown"), given=10, goodRating=3, byUser = FALSE)
+eval_accuracy
+
+rlab_time <- toc(quiet = FALSE)
+
+```
+
+##### Recommender based on Alternating Least Squares (ALS) -  Spark Implementation
+
+```{r message=FALSE, warning=FALSE}
+
+tic()
+
+# Spark connection
+
+sc <- spark_connect(master = "local")
+
+# Spark data preparation
+
+sprk_ratings <- ratings[,-4]
+
+train_filter <- sample(x = c(TRUE, FALSE), size = nrow(sprk_ratings),replace = TRUE, prob = c(0.8, 0.2))
+
+train_ratings <- sprk_ratings[train_filter, ]
+test_ratings <- sprk_ratings[!train_filter, ]
+
+# Copy data to Spark memory
+sprk_train <- sdf_copy_to(sc, train_ratings, "train_ratings", overwrite = TRUE)
+sprk_test <- sdf_copy_to(sc, test_ratings, "test_ratings", overwrite = TRUE)
+
+
+# Creating Recommender Model (ALS)
+sprk_recommender_model <- ml_als(sprk_train, max_iter = 5, nonnegative = TRUE, 
+                   rating_col = "rating", user_col = "userId", item_col = "movieId")
+
+sprk_recom <- sprk_recommender_model$.jobj %>%
+  invoke("transform", spark_dataframe(sprk_test)) %>%
+  collect()
+
+#Remove NAs to perform evaluation calculations
+sprk_recom <- sprk_recom[!is.na(sprk_recom$prediction), ]
+
+# Evaluating Model
+sprk_mse <- mean((sprk_recom$rating - sprk_recom$prediction)^2)
+sprk_rmse <- sqrt(sprk_mse)
+sprk_mae <- mean(abs(sprk_recom$rating - sprk_recom$prediction))
+
+sprk_mse
+sprk_rmse
+sprk_mae
+
+# Spark disconnection
+spark_disconnect(sc)
+
+sprk_time <- toc(quiet = FALSE)
+
+# Comparison
+
+comp_methods <- rbind(eval_accuracy, data.frame(RMSE = sprk_rmse, MSE = sprk_mse , MAE = sprk_mae))
+rownames(comp_methods) <- c("recommenderlab", "Spark")
+library(knitr)
+kable(comp_methods)
+
+```
+
+##### Conclusion
+
+Spark implementation of the ALS-based recommender model outperformed recommenderlab in both main areas: Performance and Accuracy.
+
+Performance was expected as it is one of the main benefits of using a distributed data/analytics platform, although installed as Local Node, Spark uses multithreading to achieve the distributed compute fashion.
+
+Spark outperformed recommenderlab by a factor of 6X in terms of performance
+
+(R can also be run as a parallel engine with R Studio Server and MS R Open multithreaded execution). 
+
+Spark running in a multi-server and high-density environment, like in the cloud, can achieve unparalleled performance that makes possible addressing the most challenging DS and ML problems. Cloud elasticity allows to minimize compute and maintenance costs while maximizing efficiency.
+
+The Spark implementation also showed better accuracy, 0.88 RMSE vs 1.10 RMSE in recommenderlab, I am thinking there is also a better ALS implementation in Spark but the exact reason is not 100% clear for me.
