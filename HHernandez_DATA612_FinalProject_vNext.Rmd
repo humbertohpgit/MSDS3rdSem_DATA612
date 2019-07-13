@@ -1,0 +1,227 @@
+---
+title: "HHernandez_DATA612_FinalProject"
+author: "humbertohp"
+date: "July 12, 2019"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    highlight: tango
+    theme: cerulean
+---
+
+```{r }
+
+```
+
+### Recommender System for Music Artists
+
+Recommendation system for music artists based on user preferences according to the songs listening frequencies (called weights) used as ratings
+
+Last.fm dataset is the official song tag and song similarity dataset of the Million Song Dataset.(+940,000 matched tracks)
+
+Last.fm provides a dataset for music recommendations. For each user in the dataset it contains a list of their top most listened to artists including the number of times those artists were played. 
+It also includes user applied tags which can be used to build a content vector.
+
+This dataset contains social networking, tagging, and music artist listening information from a set of 2K users from Last.fm online music system.
+The dataset is released in the framework of the 2nd International Workshop on Information Heterogeneity and Fusion in Recommender Systems (HetRec 2011)  http://ir.ii.uam.es/hetrec2011 
+http://www.last.fm 
+
+Data Statistics:
+
+1892 users
+
+17632 artists
+
+92834 user-listened artist relations, i.e. tuples [user, artist, listeningCount]
+
+11946 tags
+
+186479 tag assignments (tas), i.e. tuples [user, tag, artist]
+
+#### Data collection, exploration and preparation
+
+```{r message=FALSE, warning=FALSE}
+
+# Loading datasets, Package Installation
+
+artists <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/artists.dat', header = TRUE, sep="\t")
+artists <- artists[,1:2] # reducing to artist ID and Name
+user_artists <- read.delim('https://raw.githubusercontent.com/humbertohpgit/MSDS3rdSem_DATA612/master/user_artists.dat', header = TRUE, sep="\t")
+
+#install.packages("tidyverse")
+#install.packages("recommenderlab")
+#install.packages("recosystem")
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(recommenderlab)
+
+# Reducing data set to the most significant users and artists and Transforming weights to ratings
+head(artists)
+head(user_artists)
+
+# Focus on top artists based on total listening frequency (Top 2000) and the most relevant users (with minimum listening frequency = 30)
+
+user_artists_mat <- user_artists %>% spread(key=artistID,value=weight)
+dim (user_artists_mat)
+
+artist_freq <- colSums(user_artists_mat[,-1],na.rm = TRUE)
+top_user_artist <- user_artists_mat[,order(artist_freq,decreasing = TRUE)[1:2000]]
+list_freq <- apply(top_user_artist,1,function(x) return(sum(!is.na(x))))
+top_user_artist <-  top_user_artist[list_freq > 30,]
+dim(top_user_artist)
+top_user_artist[1:10,1:15]
+
+# Transforming weights to ratings (from 1 to 5)
+
+quantile(top_user_artist, na.rm=TRUE) #determine ratings limits
+quantile(top_user_artist, probs=0.90,na.rm=TRUE) # determine the top rating limit
+
+user_artist_trans <- top_user_artist
+user_artist_trans[user_artist_trans < 151] <- 1
+user_artist_trans[user_artist_trans >= 151 & user_artist_trans< 343] <- 2
+user_artist_trans[user_artist_trans  >= 343 & user_artist_trans < 842] <- 3
+user_artist_trans[user_artist_trans  >= 842 & user_artist_trans  < 1872] <- 4
+user_artist_trans[user_artist_trans  >= 1872] <- 5
+
+user_artist_trans[1:10,1:15]
+
+# Create the rating (sparse) matrix
+
+user_artist_trans_mat <- as(as.matrix(user_artist_trans),"realRatingMatrix")
+user_artist_trans_mat
+
+# Exploring the data
+
+ratings_vec <- as.vector(user_artist_trans_mat@data)
+table(ratings_vec)
+
+qplot( ratings_vec[ratings_vec != 0]) + ggtitle("Distribution of the ratings")
+
+artist_plays <- data.frame( artist = names(artist_freq), plays = artist_freq)
+artist_plays <- artist_plays[order(artist_plays$plays, decreasing = TRUE),]
+
+ggplot (artist_plays[1:10,], aes(x=artist, y=plays)) + geom_bar(stat="identity") + ggtitle("Number of plays for top Artists")
+
+#Heatmaps
+image(user_artist_trans_mat[1:30,1:30]) #first 10 users and first 10 artists
+#Heatmap of the most relevant artists and users
+min_n_artists <- quantile(rowCounts(user_artist_trans_mat), 0.97)
+min_n_users <- quantile(colCounts(user_artist_trans_mat), 0.97)
+image(user_artist_trans_mat[rowCounts(user_artist_trans_mat)>min_n_artists, colCounts(user_artist_trans_mat)> min_n_users], main="Heatmap of the most relevant artists and users")
+
+
+# Create the Train and Test data sets as part of the evaluation schema
+set.seed(100)
+eval_sch <- evaluationScheme(data = user_artist_trans_mat, method = "split", train = .8, given = 3, goodRating = 3)
+
+```
+
+#### recommenderlab - UBCF and IBCF Recommender Methods
+
+```{r message=FALSE, warning=FALSE}
+
+#Exploring parameters of recommendation methods in recommenderlab
+
+recommender_models <- recommenderRegistry$get_entries(dataType = "realRatingMatrix")
+names(recommender_models)
+lapply(recommender_models, "[[", "description")
+
+# Create recommender model - User-based Collaborative Filtering (UCBF)
+
+recommender_model_ubcf <- Recommender(data=getData(eval_sch,"train"),method="UBCF")
+
+# Recommendation for the first 5 users
+
+recom_ubcf <- predict(recommender_model_ubcf, getData(eval_sch,"known")[1:5], n=5, type = "topNList")
+recom_ubcf_list <- as(recom_ubcf, "list") #convert recommenderlab object to readable list
+recom_ubcf_list 
+
+# Get artist names
+
+recom_ubcf_result <- list()
+for (i in c(1:5)){
+ recom_ubcf_result[[i]] <- artists[artists$id %in% as.vector(recom_ubcf_list[[i]]),2]
+}
+
+# Top 5 recommendations for the first 5 users
+recom_ubcf_result
+
+# Evaluation
+
+# Prediction of ratings for all users
+
+recom_ubcf <- predict(recommender_model_ubcf, getData(eval_sch,"known"), type = "ratings")
+
+accuracy_ubcf <- calcPredictionAccuracy(x = recom_ubcf, data = getData(eval_sch, "unknown"), given=3, goodRating=3)
+
+accuracy_ubcf
+
+# Create recommender model - Item-based Collaborative Filtering (IBCF)
+
+recommender_model_ibcf <- Recommender(data=getData(eval_sch,"train"),method="IBCF")
+
+# Recommendation for the first 5 users
+
+recom_ibcf <- predict(recommender_model_ibcf, getData(eval_sch,"known")[1:5], n=5, type = "topNList")
+recom_ibcf_list <- as(recom_ibcf, "list") #convert recommenderlab object to readable list
+recom_ibcf_list 
+
+# Get artist names
+
+recom_ibcf_result <- list()
+for (i in c(1:5)){
+ recom_ibcf_result[[i]] <- artists[artists$id %in% as.vector(recom_ibcf_list[[i]]),2]
+}
+
+# Top 5 recommendations for the first 5 users
+recom_ibcf_result
+
+# Evaluation
+
+# Prediction of ratings for all users
+
+recom_ibcf <- predict(recommender_model_ibcf, getData(eval_sch,"known"), type = "ratings")
+
+accuracy_ibcf <- calcPredictionAccuracy(x = recom_ibcf, data = getData(eval_sch, "unknown"), given=3, goodRating=3)
+
+accuracy_ibcf
+
+```
+
+#### recommenderlab - Recommender Methods Evaluation
+
+```{r message=FALSE, warning=FALSE}
+
+comp_methods <- rbind(accuracy_ubcf, accuracy_ibcf)
+rownames(comp_methods) <- c("UBCF", "IBCF")
+library(knitr)
+kable(comp_methods)
+
+# ROC & Precision & Recall
+
+rec_methods <- list(
+  "UBCF" = list(name = "UBCF", param = NULL),
+  "IBCF" = list(name = "IBCF", param = NULL))
+eval_results <- evaluate(x = eval_sch, method = rec_methods, n = c(1, 5, 10, 15, 20,25,30))
+
+plot(eval_results, 
+     annotate = TRUE, legend = "topleft", main = "ROC Curve")
+
+plot(eval_results, "prec/rec", 
+     annotate = TRUE, legend = "topright", main = "Precision-Recall")
+
+```
+
+#### Observations & Conclusion
+
+UBCF recommender model demonstrates to be the best model for music artist recommendations. Although IBCF performed relatively very close in terms of ratings calculation accuracy (RMSE_UBCF = 1.00 vs RMSE_IBCF = 1.12).
+
+ROC shows a substantial AUC for the UBCF model with the point at 10 artist recommendation as the best trade-off point between TPR and FPR. Regarding the  Precision/Recall curve, it aligns with the ROC for the UBCF model, showing the best balance between Precision and Recall at the 10 to 15 artists recommendation. 
+
+In both curves, the IBCF model shows very poor perfomance.
+
+
+
